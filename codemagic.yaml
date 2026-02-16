@@ -109,9 +109,12 @@ workflows:
           security default-keychain -s $KEYCHAIN_PATH
           security unlock-keychain -p codemagic $KEYCHAIN_PATH
           
-          # 解码证书 - 使用 printf 避免 base64 解码问题
+          # 设置钥匙串为搜索路径
+          security list-keychains -s $KEYCHAIN_PATH
+          
+          # 解码证书 - 尝试多种方式
           if [ -n "$CERTIFICATE_BASE64" ]; then
-            # 移除可能的换行符并解码
+            echo "Decoding certificate..."
             printf "%s" "$CERTIFICATE_BASE64" | base64 -D > /tmp/certificate.p12 2>/dev/null || \
             printf "%s" "$CERTIFICATE_BASE64" | base64 -d > /tmp/certificate.p12 2>/dev/null || \
             echo "$CERTIFICATE_BASE64" | base64 -D > /tmp/certificate.p12 2>/dev/null || \
@@ -129,7 +132,7 @@ workflows:
                 -T /usr/bin/security \
                 -x
                 
-              echo "Certificate imported successfully"
+              echo "Certificate import completed"
             else
               echo "ERROR: Failed to create certificate file"
               exit 1
@@ -144,18 +147,28 @@ workflows:
             -s -k codemagic $KEYCHAIN_PATH
           
           # 验证证书是否导入成功
+          echo "=== Available signing certificates ==="
           security find-identity -v -p codesigning $KEYCHAIN_PATH
           
       - name: Increment build number
         script: |
-          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-app-store-build-number \
-            "$APP_STORE_APPLE_ID" \
-            --platform IOS \
-            --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
-            --issuer-id "$APP_STORE_CONNECT_API_KEY_ISSUER_ID" \
-            --private-key "$APP_STORE_CONNECT_API_KEY_CONTENT")
+          # 首次构建使用构建号 1
+          # 如果 APP_STORE_APPLE_ID 设置正确，则获取最新构建号
+          if [ -n "$APP_STORE_APPLE_ID" ] && [ "$APP_STORE_APPLE_ID" != "your_apple_id" ]; then
+            echo "Fetching latest build number from App Store Connect..."
+            LATEST_BUILD_NUMBER=$(app-store-connect get-latest-app-store-build-number \
+              "$APP_STORE_APPLE_ID" \
+              --platform IOS \
+              --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
+              --issuer-id "$APP_STORE_CONNECT_API_KEY_ISSUER_ID" \
+              --private-key "$APP_STORE_CONNECT_API_KEY_CONTENT" 2>/dev/null || echo "0")
+            
+            NEW_BUILD_NUMBER=$(($LATEST_BUILD_NUMBER + 1))
+          else
+            echo "APP_STORE_APPLE_ID not set or invalid, using build number 1"
+            NEW_BUILD_NUMBER=1
+          fi
           
-          NEW_BUILD_NUMBER=$(($LATEST_BUILD_NUMBER + 1))
           echo "New build number: $NEW_BUILD_NUMBER"
           agvtool new-version -all $NEW_BUILD_NUMBER
           
@@ -268,6 +281,7 @@ workflows:
           security create-keychain -p codemagic $KEYCHAIN_PATH
           security default-keychain -s $KEYCHAIN_PATH
           security unlock-keychain -p codemagic $KEYCHAIN_PATH
+          security list-keychains -s $KEYCHAIN_PATH
           
           # 解码证书 - 尝试多种方式
           printf "%s" "$CERTIFICATE_BASE64" | base64 -D > /tmp/certificate.p12 2>/dev/null || \
@@ -285,6 +299,10 @@ workflows:
             
           security set-key-partition-list -S apple-tool,apple,developer-tools,codesign \
             -s -k codemagic $KEYCHAIN_PATH
+          
+          # 验证证书
+          echo "=== Available signing certificates ==="
+          security find-identity -v -p codesigning $KEYCHAIN_PATH
           
           # 验证
           security find-identity -v -p codesigning $KEYCHAIN_PATH
