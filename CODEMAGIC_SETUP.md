@@ -28,7 +28,7 @@
 |--------|-----|------|
 | `APP_STORE_CONNECT_API_KEY_ID` | DAZ2L8D5PU | ❌ Public |
 | `APP_STORE_CONNECT_API_KEY_ISSUER_ID` | 从 Apple Developer 获取 | ✅ Secure |
-| `APP_STORE_CONNECT_API_KEY_CONTENT` | api_key_b64.txt 内容 | ✅ Secure |
+| `APP_STORE_CONNECT_API_KEY_CONTENT` | api_key_raw.txt 内容（原始 .p8 文件） | ✅ Secure |
 | `APP_STORE_APPLE_ID` | 6759248002 | ❌ Public |
 
 ### 获取 API Key Issuer ID
@@ -67,7 +67,7 @@
 - `p12_b64.txt` -> `CERTIFICATE_BASE64`
 - `profile_app_b64.txt` -> `PROVISIONING_PROFILE_APP_BASE64`
 - `profile_widget_b64.txt` -> `PROVISIONING_PROFILE_WIDGET_BASE64`
-- `api_key_b64.txt` -> `APP_STORE_CONNECT_API_KEY_CONTENT`
+- `api_key_raw.txt` -> `APP_STORE_CONNECT_API_KEY_CONTENT`（注意：这是原始 .p8 文件内容，不是 Base64）
 
 ---
 
@@ -88,4 +88,4 @@
 - [p12_b64.txt](https://raw.githubusercontent.com/budingricky/f1countdown-project-full/main/p12_b64.txt)
 - [profile_app_b64.txt](https://raw.githubusercontent.com/budingricky/f1countdown-project-full/main/profile_app_b64.txt)
 - [profile_widget_b64.txt](https://raw.githubusercontent.com/budingricky/f1countdown-project-full/main/profile_widget_b64.txt)
-- [api_key_b64.txt](https://raw.githubusercontent.com/budingricky/f1countdown-project-full/main/api_key_b64.txt)
+- [api_key_raw.txt](https://raw.githubusercontent.com/budingricky/f1countdown-project-full/main/api_key_raw.txt)（API Key 原始内容）
