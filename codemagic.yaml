@@ -247,8 +247,19 @@ workflows:
             -exportPath build/ipa \
             -exportOptionsPlist ExportOptions.plist
             
+      - name: Setup App Store Connect API Key
+        script: |
+          # 创建 API Key 目录
+          mkdir -p ~/.appstoreconnect/private_keys
+          
+          # 写入私钥文件
+          echo "$APP_STORE_CONNECT_API_KEY_CONTENT" > ~/.appstoreconnect/private_keys/AuthKey_$APP_STORE_CONNECT_API_KEY_ID.p8
+          
+          echo "API Key file created: AuthKey_$APP_STORE_CONNECT_API_KEY_ID.p8"
+          
       - name: Upload to TestFlight
         script: |
+          # 使用 altool 上传 (需要私钥文件)
           xcrun altool \
             --upload-app \
             --type ios \
