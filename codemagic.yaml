@@ -1,0 +1,340 @@
+# F1 倒计时应用 - Codemagic 云编译配置
+# 使用 App Store Connect API 自动上传 TestFlight
+# 所有敏感信息通过 Codemagic Variable Groups 配置
+
+workflows:
+  # ==========================================
+  # 工作流 1: 开发构建（无需签名，验证编译）
+  # ==========================================
+  ios-dev-workflow:
+    name: iOS Development Build
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    
+    environment:
+      vars:
+        XCODE_PROJECT: "F1Countdown.xcodeproj"
+        XCODE_SCHEME: "F1Countdown"
+      xcode: latest
+    
+    scripts:
+      - name: Show Xcode version
+        script: |
+          xcodebuild -version
+          
+      - name: Show available schemes
+        script: |
+          xcodebuild -project $XCODE_PROJECT -list
+          
+      - name: Build for iOS Simulator
+        script: |
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=latest' \
+            -configuration Debug \
+            build
+            
+      - name: Run Unit Tests
+        script: |
+          xcodebuild test \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=latest' \
+            -only-testing:F1CountdownTests \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO
+            
+    artifacts:
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      
+    publishing:
+      email:
+        recipients:
+          - buding0401@126.com
+        notify:
+          success: true
+          failure: true
+
+  # ==========================================
+  # 工作流 2: TestFlight 发布（使用手动证书 + API 上传）
+  # ==========================================
+  ios-testflight-workflow:
+    name: iOS TestFlight Build
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    
+    environment:
+      # 引用 Codemagic 中创建的 Variable Groups
+      groups:
+        - f1countdown_credentials    # 证书和签名相关
+        - appstore_api               # App Store Connect API
+      
+      vars:
+        # 项目配置
+        XCODE_PROJECT: "F1Countdown.xcodeproj"
+        XCODE_SCHEME: "F1Countdown"
+        BUNDLE_ID: "com.f1countdown.app"
+        WIDGET_BUNDLE_ID: "com.f1countdown.app.widget"
+        
+      xcode: latest
+    
+    scripts:
+      - name: Show Xcode version
+        script: |
+          xcodebuild -version
+          
+      - name: Decode Provisioning Profiles from Base64
+        script: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          
+          if [ -n "$PROVISIONING_PROFILE_APP_BASE64" ]; then
+            echo "$PROVISIONING_PROFILE_APP_BASE64" | base64 -d > ~/Library/MobileDevice/Provisioning\ Profiles/app.mobileprovision
+            echo "Main app profile installed"
+          fi
+          
+          if [ -n "$PROVISIONING_PROFILE_WIDGET_BASE64" ]; then
+            echo "$PROVISIONING_PROFILE_WIDGET_BASE64" | base64 -d > ~/Library/MobileDevice/Provisioning\ Profiles/widget.mobileprovision
+            echo "Widget profile installed"
+          fi
+          
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
+          
+      - name: Decode Certificate from Base64
+        script: |
+          # 创建临时钥匙串
+          KEYCHAIN_PATH=$HOME/codemagic.keychain
+          security create-keychain -p codemagic $KEYCHAIN_PATH
+          security default-keychain -s $KEYCHAIN_PATH
+          security unlock-keychain -p codemagic $KEYCHAIN_PATH
+          
+          # 解码证书 - 使用 printf 避免 base64 解码问题
+          if [ -n "$CERTIFICATE_BASE64" ]; then
+            # 移除可能的换行符并解码
+            printf "%s" "$CERTIFICATE_BASE64" | base64 -D > /tmp/certificate.p12 2>/dev/null || \
+            printf "%s" "$CERTIFICATE_BASE64" | base64 -d > /tmp/certificate.p12 2>/dev/null || \
+            echo "$CERTIFICATE_BASE64" | base64 -D > /tmp/certificate.p12 2>/dev/null || \
+            echo "$CERTIFICATE_BASE64" | base64 -d > /tmp/certificate.p12
+            
+            # 验证文件是否创建成功
+            if [ -f /tmp/certificate.p12 ]; then
+              echo "Certificate file created: $(ls -la /tmp/certificate.p12)"
+              
+              # 导入证书到钥匙串
+              security import /tmp/certificate.p12 \
+                -k $KEYCHAIN_PATH \
+                -P "$CERTIFICATE_PASSWORD" \
+                -T /usr/bin/codesign \
+                -T /usr/bin/security \
+                -x
+                
+              echo "Certificate imported successfully"
+            else
+              echo "ERROR: Failed to create certificate file"
+              exit 1
+            fi
+          else
+            echo "ERROR: CERTIFICATE_BASE64 is not set"
+            exit 1
+          fi
+          
+          # 设置钥匙串权限
+          security set-key-partition-list -S apple-tool,apple,developer-tools,codesign \
+            -s -k codemagic $KEYCHAIN_PATH
+          
+          # 验证证书是否导入成功
+          security find-identity -v -p codesigning $KEYCHAIN_PATH
+          
+      - name: Increment build number
+        script: |
+          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-app-store-build-number \
+            "$APP_STORE_APPLE_ID" \
+            --platform IOS \
+            --key-id "$APP_STORE_CONNECT_API_KEY_ID" \
+            --issuer-id "$APP_STORE_CONNECT_API_KEY_ISSUER_ID" \
+            --private-key "$APP_STORE_CONNECT_API_KEY_CONTENT")
+          
+          NEW_BUILD_NUMBER=$(($LATEST_BUILD_NUMBER + 1))
+          echo "New build number: $NEW_BUILD_NUMBER"
+          agvtool new-version -all $NEW_BUILD_NUMBER
+          
+      - name: Build IPA for distribution
+        script: |
+          # 使用 Codemagic 工具自动配置签名
+          xcode-project use-profiles
+          
+          # 查看已安装的 Profiles
+          echo "=== Installed Provisioning Profiles ==="
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
+          
+          # 查看项目签名配置
+          echo "=== Project Signing Settings ==="
+          xcodebuild -project "$XCODE_PROJECT" -showBuildSettings | grep -i "PROVISIONING_PROFILE\|CODE_SIGN"
+          
+          # 创建 ExportOptions.plist
+          cat > ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>teamID</key>
+              <string>$TEAM_ID</string>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+          
+          # 构建 Archive
+          xcodebuild archive \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -archivePath build/$XCODE_SCHEME.xcarchive \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_IDENTITY="Apple Distribution"
+            
+          # 导出 IPA
+          xcodebuild -exportArchive \
+            -archivePath build/$XCODE_SCHEME.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist ExportOptions.plist
+            
+      - name: Upload to TestFlight
+        script: |
+          xcrun altool \
+            --upload-app \
+            --type ios \
+            --file build/ipa/*.ipa \
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_API_KEY_ISSUER_ID"
+            
+    artifacts:
+      - build/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      
+    publishing:
+      email:
+        recipients:
+          - buding0401@126.com
+        notify:
+          success: true
+          failure: true
+
+  # ==========================================
+  # 工作流 3: 仅构建 IPA（不上传）
+  # ==========================================
+  ios-build-only-workflow:
+    name: iOS Build Only
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    
+    environment:
+      groups:
+        - f1countdown_credentials
+      
+      vars:
+        XCODE_PROJECT: "F1Countdown.xcodeproj"
+        XCODE_SCHEME: "F1Countdown"
+        BUNDLE_ID: "com.f1countdown.app"
+        WIDGET_BUNDLE_ID: "com.f1countdown.app.widget"
+        
+      xcode: latest
+    
+    scripts:
+      - name: Decode Provisioning Profiles
+        script: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          
+          # 解码主应用 Profile
+          printf "%s" "$PROVISIONING_PROFILE_APP_BASE64" | base64 -D > ~/Library/MobileDevice/Provisioning\ Profiles/app.mobileprovision 2>/dev/null || \
+          printf "%s" "$PROVISIONING_PROFILE_APP_BASE64" | base64 -d > ~/Library/MobileDevice/Provisioning\ Profiles/app.mobileprovision
+          
+          # 解码 Widget Profile  
+          printf "%s" "$PROVISIONING_PROFILE_WIDGET_BASE64" | base64 -D > ~/Library/MobileDevice/Provisioning\ Profiles/widget.mobileprovision 2>/dev/null || \
+          printf "%s" "$PROVISIONING_PROFILE_WIDGET_BASE64" | base64 -d > ~/Library/MobileDevice/Provisioning\ Profiles/widget.mobileprovision
+          
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/
+          
+      - name: Decode Certificate
+        script: |
+          KEYCHAIN_PATH=$HOME/codemagic.keychain
+          security create-keychain -p codemagic $KEYCHAIN_PATH
+          security default-keychain -s $KEYCHAIN_PATH
+          security unlock-keychain -p codemagic $KEYCHAIN_PATH
+          
+          # 解码证书 - 尝试多种方式
+          printf "%s" "$CERTIFICATE_BASE64" | base64 -D > /tmp/certificate.p12 2>/dev/null || \
+          printf "%s" "$CERTIFICATE_BASE64" | base64 -d > /tmp/certificate.p12 2>/dev/null || \
+          echo "$CERTIFICATE_BASE64" | base64 -D > /tmp/certificate.p12 2>/dev/null || \
+          echo "$CERTIFICATE_BASE64" | base64 -d > /tmp/certificate.p12
+          
+          # 导入证书
+          security import /tmp/certificate.p12 \
+            -k $KEYCHAIN_PATH \
+            -P "$CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security \
+            -x
+            
+          security set-key-partition-list -S apple-tool,apple,developer-tools,codesign \
+            -s -k codemagic $KEYCHAIN_PATH
+          
+          # 验证
+          security find-identity -v -p codesigning $KEYCHAIN_PATH
+          
+      - name: Build Archive
+        script: |
+          # 使用 Codemagic 工具自动配置签名
+          xcode-project use-profiles
+          
+          # 创建 ExportOptions.plist
+          cat > ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>teamID</key>
+              <string>$TEAM_ID</string>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <true/>
+          </dict>
+          </plist>
+          EOF
+          
+          # 构建 Archive
+          xcodebuild archive \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -archivePath build/$XCODE_SCHEME.xcarchive \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_IDENTITY="Apple Distribution"
+            
+          # 导出 IPA
+          xcodebuild -exportArchive \
+            -archivePath build/$XCODE_SCHEME.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist ExportOptions.plist
+            
+    artifacts:
+      - build/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      
+    publishing:
+      email:
+        recipients:
+          - buding0401@126.com
+        notify:
+          success: true
+          failure: true

@@ -1,0 +1,86 @@
+{
+  "identifier" : "Products",
+  "nonRenewingSubscriptions" : [
+    
+  ],
+  "products" : [
+    {
+      "cached" : true,
+      "displayPrice" : "¥18",
+      "familyShareable" : true,
+      "internalID" : "f1countdown_pro_001",
+      "localizations" : [
+        {
+          "description" : "解锁所有高级功能，包括锁屏小组件、灵动岛实时比分、精美壁纸和无广告体验",
+          "displayName" : "F1 倒计时 Pro",
+          "locale" : "zh_CN"
+        },
+        {
+          "description" : "Unlock all premium features including lock screen widgets, Dynamic Island live scores, beautiful wallpapers, and ad-free experience",
+          "displayName" : "F1 Countdown Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.f1countdown.pro",
+      "referenceName" : "F1 Countdown Pro",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "6739081234",
+    "_developerTeamID" : "YOURTEAMID",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 761510400,
+    "_locale" : "zh_CN",
+    "_storefront" : "CHN",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Store Sync"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Subscription Status"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Transaction"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Refund Request Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Manage Subscriptions Sheet"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+    
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}
